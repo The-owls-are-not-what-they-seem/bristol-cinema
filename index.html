@@ -51,10 +51,6 @@
   .status { color: var(--dim); min-height: 1.4em; margin: 8px 0; }
   .cursor { animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
-  .next {
-    border: 1px solid var(--dim); padding: 8px 10px; margin: 8px 0 12px; color: var(--bright);
-  }
-  .next:empty { display: none; }
   .row-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
   button {
     font: inherit; font-size: 14px; color: var(--green); background: #000;
@@ -99,7 +95,6 @@
   </header>
   <main>
     <div class="status" id="status" role="status">&gt; loading listings<span class="cursor">_</span></div>
-    <div class="next" id="next"></div>
     <div class="label">DAY</div>
     <div class="row-buttons" id="days"></div>
     <div class="label">CINEMA</div>
@@ -120,7 +115,6 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   var statusEl = document.getElementById('status');
-  var nextEl = document.getElementById('next');
   var daysEl = document.getElementById('days');
   var cinemasEl = document.getElementById('cinemas');
   var listEl = document.getElementById('list');
@@ -244,7 +238,6 @@
     if (!day) return;
     setStatus('reading ' + day.name.toLowerCase() + '...');
     listEl.innerHTML = '';
-    nextEl.textContent = '';
     loadDay(day.name).then(function (rows) {
       if (state.day !== day.name) return;
       var shown = rows.filter(function (r) { return state.cinema === 'All' || r.cinema === state.cinema; });
@@ -252,10 +245,6 @@
       var nextIdx = -1;
       if (day.isToday) {
         for (var i = 0; i < shown.length; i++) { if (shown[i].time >= now) { nextIdx = i; break; } }
-        if (nextIdx >= 0) {
-          var n = shown[nextIdx];
-          nextEl.textContent = 'NEXT: ' + n.time + '  ' + n.film + '  @ ' + (SHORT[n.cinema] || n.cinema);
-        }
       }
       if (!shown.length) {
         listEl.innerHTML = '<li class="empty">No showings listed.</li>';
