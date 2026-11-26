@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bristol Cinema</title>
+<meta name="description" content="Film times at Watershed, The Cube and Showcase Avonmeads, in time order.">
+<meta name="theme-color" content="#000000">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #000;
+    --green: #33ff66;
+    --bright: #c8ffd6;
+    --dim: #1fa844;
+    --line: #0c4d1c;
+    --glow: 0 0 2px rgba(51, 255, 102, 0.8), 0 0 8px rgba(51, 255, 102, 0.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--green); }
+  body {
+    font-family: 'Share Tech Mono', ui-monospace, monospace;
+    font-size: 16px;
+    line-height: 1.4;
+    text-shadow: var(--glow);
+    min-height: 100vh;
+  }
+  /* Scan lines over everything */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,0.25) 3px);
+    z-index: 10;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header { position: relative; height: 170px; overflow: hidden; }
+  #rain { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .title {
+    position: absolute; left: 0; right: 0; bottom: 16px; text-align: center;
+  }
+  .title h1 {
+    display: inline-block; margin: 0; padding: 2px 16px; background: #000;
+    font-family: 'VT323', monospace; font-weight: normal;
+    font-size: clamp(30px, 8vw, 44px); letter-spacing: 0.2em; color: var(--bright);
+  }
+  main { padding: 8px 16px 32px; }
+  .status { color: var(--dim); min-height: 1.4em; margin: 8px 0; }
+  .cursor { animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .next {
+    border: 1px solid var(--dim); padding: 8px 10px; margin: 8px 0 12px; color: var(--bright);
+  }
+  .next:empty { display: none; }
+  .row-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  button {
+    font: inherit; font-size: 14px; color: var(--green); background: #000;
+    border: 1px solid var(--dim); border-radius: 3px; padding: 6px 10px; cursor: pointer;
+    text-shadow: var(--glow);
+  }
+  button[aria-pressed="true"] { background: var(--green); color: #000; text-shadow: none; }
+  button:focus-visible { outline: 2px solid var(--bright); outline-offset: 2px; }
+  .label { color: var(--dim); font-size: 13px; margin-top: 10px; }
+  ol { list-style: none; margin: 12px 0 0; padding: 0; }
+  li {
+    display: grid; grid-template-columns: 58px minmax(0, 1fr); column-gap: 10px;
+    padding: 8px 0; border-bottom: 1px dashed var(--line);
+  }
+  li.past { opacity: 0.4; }
+  li.is-next { background: rgba(51, 255, 102, 0.08); }
+  .time { color: var(--bright); }
+  .film { color: var(--green); }
+  .meta { grid-column: 2; color: var(--dim); font-size: 13px; }
+  .empty, .error { color: var(--dim); padding: 16px 0; }
+  .error { color: #ff7a7a; text-shadow: none; }
+  footer { color: var(--dim); font-size: 12px; padding: 0 16px 24px; }
+  footer a { color: var(--dim); }
+  @media (min-width: 600px) {
+    li { grid-template-columns: 64px minmax(0, 1fr) 170px; }
+    .meta { grid-column: 2; }
+    .cinema { grid-column: 3; grid-row: 1; text-align: right; color: var(--dim); }
+  }
+  .cinema-inline { color: var(--dim); }
+  @media (min-width: 600px) { .cinema-inline { display: none; } }
+  @media (max-width: 599px) { .cinema { display: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .cursor { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <canvas id="rain" aria-hidden="true"></canvas>
+    <div class="title"><h1>BRISTOL CINEMA</h1></div>
+  </header>
+  <main>
+    <div class="status" id="status" role="status">&gt; loading listings<span class="cursor">_</span></div>
+    <div class="next" id="next"></div>
+    <div class="label">DAY</div>
+    <div class="row-buttons" id="days"></div>
+    <div class="label">CINEMA</div>
+    <div class="row-buttons" id="cinemas"></div>
+    <ol id="list"></ol>
+  </main>
+  <footer id="footer">Watershed · The Cube · Showcase Avonmeads. Times can change, so check with the cinema before you go.</footer>
+</div>
+
+<script>
+(function () {
+  // ---- Settings ----
+  var SHEET_ID = '1JYgKLuQ_mUu8wPIXUN9Tru8Zo340fLO_ajS9spQAFgc';
+  var TZ = 'Europe/London';
+  var CINEMAS = ['All', 'Watershed', 'The Cube', 'Showcase Avonmeads'];
+  var SHORT = { 'Showcase Avonmeads': 'Showcase' };
+  var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  var statusEl = document.getElementById('status');
+  var nextEl = document.getElementById('next');
+  var daysEl = document.getElementById('days');
+  var cinemasEl = document.getElementById('cinemas');
+  var listEl = document.getElementById('list');
+  var footerEl = document.getElementById('footer');
+
+  var state = { days: [], day: null, cinema: 'All', cache: {} };
+
+  function setStatus(text) {
+    statusEl.innerHTML = '&gt; ' + escapeHtml(text) + '<span class="cursor">_</span>';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // Today's date and time in London, whatever the visitor's own time zone.
+  function londonNow() {
+    var parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    }).formatToParts(new Date());
+    var p = {};
+    parts.forEach(function (x) { p[x.type] = x.value; });
+    return {
+      date: new Date(Date.UTC(+p.year, +p.month - 1, +p.day)),
+      time: p.hour + ':' + p.minute
+    };
+  }
+
+  function tabName(d) {
+    return DOW[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MON[d.getUTCMonth()];
+  }
+
+  function addDays(d, n) { return new Date(d.getTime() + n * 86400000); }
+
+  // Minimal CSV parser that copes with quoted fields.
+  function parseCsv(text) {
+    var rows = [], row = [], field = '', q = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (q) {
+        if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+        else if (c === '"') q = false;
+        else field += c;
+      } else if (c === '"') q = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else if (c !== '\r') field += c;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  function sheetUrl(name, headers) {
+    return 'https://docs.google.com/spreadsheets/d/' + SHEET_ID +
+      '/gviz/tq?tqx=out:csv&headers=' + headers + '&sheet=' + encodeURIComponent(name);
+  }
+
+  function fetchCsv(name, headers) {
+    return fetch(sheetUrl(name, headers), { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
+      .then(parseCsv);
+  }
+
+  // "Thu 26 Nov to Wed 2 Dec 2026" -> first date of the week the sheet covers.
+  function parseCovers(text) {
+    var m = /(\d{1,2}) (\w{3}) to \w{3} (\d{1,2}) (\w{3}) (\d{4})/.exec(text || '');
+    if (!m) return null;
+    var startMon = MON.indexOf(m[2]), endMon = MON.indexOf(m[4]), year = +m[5];
+    if (startMon < 0 || endMon < 0) return null;
+    var startYear = startMon > endMon ? year - 1 : year;
+    return new Date(Date.UTC(startYear, startMon, +m[1]));
+  }
+
+  function loadDay(name) {
+    if (state.cache[name]) return Promise.resolve(state.cache[name]);
+    return fetchCsv(name, 1).then(function (rows) {
+      var out = rows.slice(1).filter(function (r) { return r[0] && r[1]; }).map(function (r) {
+        return {
+          time: (r[0] || '').trim(),
+          film: (r[1] || '').trim(),
+          cinema: (r[2] || '').trim(),
+          screening: (r[3] || '').trim(),
+          cert: (r[4] || '').trim(),
+          runtime: (r[5] || '').trim(),
+          notes: (r[6] || '').trim()
+        };
+      });
+      out.sort(function (a, b) { return a.time < b.time ? -1 : a.time > b.time ? 1 : 0; });
+      state.cache[name] = out;
+      return out;
+    });
+  }
+
+  function renderButtons() {
+    daysEl.innerHTML = '';
+    state.days.forEach(function (d, i) {
+      var b = document.createElement('button');
+      b.textContent = i === 0 && d.isToday ? 'TODAY' : d.name.toUpperCase();
+      b.setAttribute('aria-pressed', String(d.name === state.day));
+      b.onclick = function () { state.day = d.name; renderButtons(); show(); };
+      daysEl.appendChild(b);
+    });
+    cinemasEl.innerHTML = '';
+    CINEMAS.forEach(function (c) {
+      var b = document.createElement('button');
+      b.textContent = (SHORT[c] || c).toUpperCase();
+      b.setAttribute('aria-pressed', String(c === state.cinema));
+      b.onclick = function () { state.cinema = c; renderButtons(); show(); };
+      cinemasEl.appendChild(b);
+    });
+  }
+
+  function show() {
+    var day = state.days.filter(function (d) { return d.name === state.day; })[0];
+    if (!day) return;
+    setStatus('reading ' + day.name.toLowerCase() + '...');
+    listEl.innerHTML = '';
+    nextEl.textContent = '';
+    loadDay(day.name).then(function (rows) {
+      if (state.day !== day.name) return;
+      var shown = rows.filter(function (r) { return state.cinema === 'All' || r.cinema === state.cinema; });
+      var now = londonNow().time;
+      var nextIdx = -1;
+      if (day.isToday) {
+        for (var i = 0; i < shown.length; i++) { if (shown[i].time >= now) { nextIdx = i; break; } }
+        if (nextIdx >= 0) {
+          var n = shown[nextIdx];
+          nextEl.textContent = 'NEXT: ' + n.time + '  ' + n.film + '  @ ' + (SHORT[n.cinema] || n.cinema);
+        }
+      }
+      if (!shown.length) {
+        listEl.innerHTML = '<li class="empty">No showings listed.</li>';
+      } else {
+        listEl.innerHTML = shown.map(function (r, i) {
+          var cls = [];
+          if (day.isToday && r.time < now) cls.push('past');
+          if (i === nextIdx) cls.push('is-next');
+          var bits = [];
+          if (r.screening) bits.push(r.screening);
+          if (r.cert) bits.push(r.cert);
+          if (r.runtime) bits.push(r.runtime + ' min');
+          if (r.notes) bits.push(r.notes);
+          return '<li class="' + cls.join(' ') + '">' +
+            '<span class="time">' + escapeHtml(r.time) + '</span>' +
+            '<span class="film">' + escapeHtml(r.film) +
+              ' <span class="cinema-inline">@ ' + escapeHtml(SHORT[r.cinema] || r.cinema) + '</span></span>' +
+            '<span class="cinema">' + escapeHtml(SHORT[r.cinema] || r.cinema) + '</span>' +
+            (bits.length ? '<span class="meta">[' + escapeHtml(bits.join(' · ')) + ']</span>' : '') +
+            '</li>';
+        }).join('');
+      }
+      setStatus(shown.length + ' showings found for ' + day.name.toLowerCase());
+    }).catch(function () {
+      listEl.innerHTML = '<li class="error">Couldn\'t load the listings. Check your connection and refresh.</li>';
+      setStatus('connection lost');
+    });
+  }
+
+  function start() {
+    setStatus('connecting...');
+    fetchCsv('Key', 0).then(function (rows) {
+      var updated = '', covers = '';
+      rows.forEach(function (r) {
+        if (r[0] === 'Last updated') updated = r[1];
+        if (r[0] === 'Covers') covers = r[1];
+      });
+      var first = parseCovers(covers);
+      if (!first) throw new Error('No dates');
+      var today = londonNow().date;
+      for (var i = 0; i < 7; i++) {
+        var d = addDays(first, i);
+        if (d.getTime() < today.getTime()) continue; // skip days already gone if the sheet is behind
+        state.days.push({ name: tabName(d), isToday: d.getTime() === today.getTime() });
+      }
+      if (!state.days.length) throw new Error('Out of date');
+      state.day = state.days[0].name;
+      if (updated) {
+        footerEl.textContent = 'Watershed · The Cube · Showcase Avonmeads. Listings updated ' + updated +
+          '. Times can change, so check with the cinema before you go.';
+      }
+      renderButtons();
+      show();
+    }).catch(function () {
+      listEl.innerHTML = '<li class="error">Couldn\'t load the listings. They may be updating; try again in a few minutes.</li>';
+      setStatus('no signal');
+    });
+  }
+
+  // ---- Falling code ----
+  function rain() {
+    var c = document.getElementById('rain');
+    var x = c.getContext('2d');
+    var chars = 'ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ0123456789Z:.=*+-<>';
+    var fs = 16, cols, drops;
+    function size() {
+      var r = window.devicePixelRatio || 1;
+      c.width = c.clientWidth * r; c.height = c.clientHeight * r;
+      x.setTransform(r, 0, 0, r, 0, 0);
+      cols = Math.ceil(c.clientWidth / fs);
+      drops = Array.from({ length: cols }, function () { return Math.random() * -20; });
+      x.fillStyle = '#000'; x.fillRect(0, 0, c.clientWidth, c.clientHeight);
+    }
+    size();
+    window.addEventListener('resize', size);
+    var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function tick() {
+      x.fillStyle = 'rgba(0,0,0,0.1)';
+      x.fillRect(0, 0, c.clientWidth, c.clientHeight);
+      x.font = fs + 'px monospace';
+      for (var i = 0; i < cols; i++) {
+        var ch = chars[Math.floor(Math.random() * chars.length)];
+        var y = drops[i] * fs;
+        x.fillStyle = Math.random() < 0.06 ? '#d8ffe2' : '#22cc55';
+        x.fillText(ch, i * fs, y);
+        if (y > c.clientHeight && Math.random() > 0.95) drops[i] = 0;
+        drops[i] += 0.55;
+      }
+    }
+    if (reduced) { for (var k = 0; k < 60; k++) tick(); return; }
+    setInterval(tick, 55);
+  }
+
+  rain();
+  start();
+})();
+</script>
+</body>
+</html>
